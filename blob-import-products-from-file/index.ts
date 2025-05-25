@@ -1,7 +1,21 @@
-import { AzureFunction, Context } from "@azure/functions"
+const { BlobServiceClient } = require("@azure/storage-blob");
+const csvParser = require("csv-parser");
+const stream = require("stream");
 
-const blobTrigger: AzureFunction = async function (context: Context, myBlob: any): Promise<void> {
-    context.log("Blob trigger function processed blob \n Name:", context.bindingData.name, "\n Blob Size:", myBlob.length, "Bytes");
+module.exports = async function (context, blobTrigger) {
+  const csvContent = blobTrigger.toString();
+  const results = [];
+
+  const readableStream = new stream.Readable();
+  readableStream.push(csvContent);
+  readableStream.push(null);
+
+  readableStream.pipe(csvParser())
+    .on("data", (data) => results.push(data))
+    .on("end", () => {
+      context.log("CSV Records:");
+      results.forEach(record => {
+        context.log(record);
+      });
+    });
 };
-
-export default blobTrigger;

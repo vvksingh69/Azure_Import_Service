@@ -1,17 +1,61 @@
-import { AzureFunction, Context, HttpRequest } from "@azure/functions"
+const { BlobServiceClient } = require("@azure/storage-blob");
 
-const httpTrigger: AzureFunction = async function (context: Context, req: HttpRequest): Promise<void> {
-    context.log('HTTP trigger function processed a request.');
-    const name = (req.query.name || (req.body && req.body.name));
-    const responseMessage = name
-        ? "Hello, " + name + ". This HTTP triggered function executed successfully."
-        : "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response.";
+module.exports = async function (context, req) {
+  const { name } = req.query;
 
+  if (!name) {
     context.res = {
-        // status: 200, /* Defaults to 200 */
-        body: responseMessage
+      status: 400,
+      body: "Query parameter 'name' is required."
     };
+    return;
+  }
 
+  const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+  const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+  const blobServiceClient = new BlobServiceClient(
+    `https://${accountName}.blob.core.windows.net`,
+    new Azure.StorageSharedKeyCredential(accountName, accountKey)
+  );
+
+  const containerName = "uploaded";
+  const containerClient = blobServiceClient.getContainerClient(containerName);
+
+  // Create container if it doesn't exist
+  await containerClient.createIfNotExists();
+
+  // Generate SAS token
+  const blobSas = generateBlobSas(
+    accountName,
+    accountKey,
+    containerName,
+    name,
+    "w"
+  );
+
+  context.res = {
+    status: 200,
+    body: {
+      token: blobSas,
+      url: `${containerClient.url}/${name}?${blobSas}`
+    }
+  };
 };
 
-export default httpTrigger;
+function generateBlobSas(accountName, accountKey, container, blob, permissions) {
+  const expiry = new Date();
+  expiry.setMinutes(expiry.getMinutes() + 15); // Token valid for 15 minutes
+
+  // Construct SAS token parameters
+  const sas = new BlobSasParameters({
+    containerName: container,
+    blobName: blob,
+    permissions,
+    startsOn: new Date(),
+    expiresOn: expiry
+  });
+
+  return sas.generateSasQueryParameters(
+    new StorageSharedKeyCredential(accountName, accountKey)
+  ).toString();
+}
